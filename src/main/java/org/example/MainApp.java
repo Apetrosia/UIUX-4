@@ -3,317 +3,298 @@ package org.example;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.geometry.*;
-import javafx.scene.Scene;
+import javafx.scene.*;
 import javafx.scene.control.*;
-import javafx.scene.effect.BlendMode;
+import javafx.scene.image.Image;
 import javafx.scene.input.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.*;
+import javafx.scene.paint.PhongMaterial;
+import javafx.scene.shape.Box;
+import javafx.scene.transform.Rotate;
 import javafx.stage.Stage;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Objects;
 
 public class MainApp extends Application {
 
-    private Pane mainPane;
-    private Pane secondPane;
-    private final List<MovingShape> shapes = new ArrayList<>();
-
-    private AnimationTimer timer;
-
-    private final BlendMode[] modes = {
-            BlendMode.SRC_OVER,
-            BlendMode.MULTIPLY,
-            BlendMode.SCREEN
-    };
-    private int modeIndex = 0;
-
-    private Shape draggingShape;
+    private Group root;
+    private Box cube;
+    private PerspectiveCamera camera;
+    private double rotation = 0;
+    private double rotationX = 0;
+    private double rotationY = 0;
+    
+    // Для контроля мыши
+    private double prevMouseX = 0;
+    private double prevMouseY = 0;
+    private boolean isMousePressed = false;
+    
+    // Для броска
+    private double velocityX = 0;
+    private double velocityY = 0;
+    private double velocityZ = 0;
+    private double posZ = 0;
+    private double posY = 0;
+    
+    // Освещение
+    private PointLight pointLight;
+    private AmbientLight ambientLight;
+    private double lightAttenuation = 0.01;
+    private double ambientIntensity = 0.5;
+    
+    private AnimationTimer animationTimer;
 
     @Override
     public void start(Stage primaryStage) {
-
-        double width = 450;
-        double height = 350;
-
-        mainPane = new Pane();
-        mainPane.setPrefSize(width, height);
-
-        VBox menu = new VBox(10);
-        menu.setPadding(new Insets(10));
-        menu.setAlignment(Pos.CENTER);
-        menu.setPrefWidth(150);
-        menu.setStyle("-fx-background-color: linear-gradient(to bottom, #2c3e50, #34495e);");
-
-        BorderPane root = new BorderPane(mainPane, null, null, null, menu);
-        Scene scene = new Scene(root, width + 150, height);
-
-        primaryStage.setTitle("Рабочее окно");
-        primaryStage.setScene(scene);
+        // Создание корневой группы
+        root = new Group();
+        
+        // Камера
+        camera = new PerspectiveCamera(true);
+        camera.setTranslateZ(-400);
+        
+        // Добавление подсветки
+        setupLighting();
+        
+        // Создание кубика
+        createDice();
+        
+        // Создание поверхности
+        createSurface();
+        
+        // UI панель
+        VBox controlPanel = createControlPanel();
+        
+        BorderPane mainRoot = new BorderPane();
+        mainRoot.setCenter(root);
+        mainRoot.setRight(controlPanel);
+        
+        Scene mainScene = new Scene(mainRoot, 1200, 700);
+        mainScene.setCamera(camera);
+        mainScene.setFill(Color.DARKGRAY);
+        
+        // Обработка входов
+        setupMouseControl(mainScene);
+        
+        primaryStage.setTitle("3D Кубик для игры");
+        primaryStage.setScene(mainScene);
         primaryStage.setX(100);
         primaryStage.setY(100);
+        primaryStage.show();
+        
+        // Анимация
+        startAnimation();
+    }
 
-        Stage secondStage = new Stage();
-        secondPane = new Pane();
-        secondPane.setPrefSize(width, height);
-        Scene scene2 = new Scene(secondPane, width, height);
+    private void setupLighting() {
+        // Точечный источник света
+        pointLight = new PointLight(Color.WHITE);
+        pointLight.setTranslateX(300);
+        pointLight.setTranslateY(-300);
+        pointLight.setTranslateZ(-200);
+        root.getChildren().add(pointLight);
+        
+        // Фоновый свет
+        ambientLight = new AmbientLight(Color.color(0.5, 0.5, 0.5, ambientIntensity));
+        root.getChildren().add(ambientLight);
+    }
 
-        secondStage.setTitle("Второе окно");
-        secondStage.setScene(scene2);
-        secondStage.setX(primaryStage.getX() + width + 180);
-        secondStage.setY(primaryStage.getY());
+    private void createDice() {
+        cube = new Box(100, 100, 100);
+        cube.setTranslateY(0);
+        cube.setTranslateZ(0);
+        posY = 0;
+        posZ = 0;
+        
+        // Создание материалов с текстурами
+        createCubeMaterials();
+        
+        root.getChildren().add(cube);
+    }
 
-        primaryStage.setOnCloseRequest(e -> secondStage.close());
-        secondStage.setOnCloseRequest(e -> primaryStage.close());
-
-        setupDrop(mainPane);
-        setupDrop(secondPane);
-
-        Button start = new Button("Начать движение");
-        Button stop = new Button("Остановить");
-        Button mode = new Button("Сменить режим");
-        Button clear = new Button("Очистить");
-
-        for (Button b : List.of(start, stop, mode, clear)) {
-            b.setPrefSize(130, 35);
-            b.setStyle("-fx-background-color: #ecf0f1; -fx-background-radius: 8;");
+    private void createCubeMaterials() {
+        // Загрузка текстур
+        try {
+            Image texture1 = new Image(Objects.requireNonNull(
+                    getClass().getResourceAsStream("/textures/copper.png")));
+            Image texture2 = new Image(Objects.requireNonNull(
+                    getClass().getResourceAsStream("/textures/gold.png")));
+            Image texture3 = new Image(Objects.requireNonNull(
+                    getClass().getResourceAsStream("/textures/tree.png")));
+            
+            PhongMaterial material1 = new PhongMaterial();
+            material1.setDiffuseMap(texture1);
+            material1.setSpecularPower(32);
+            
+            PhongMaterial material2 = new PhongMaterial();
+            material2.setDiffuseMap(texture2);
+            material2.setSpecularPower(32);
+            
+            PhongMaterial material3 = new PhongMaterial();
+            material3.setDiffuseMap(texture3);
+            material3.setSpecularPower(32);
+            
+            cube.setMaterial(material1);
+            
+        } catch (Exception e) {
+            // Если текстуры не найдены, используем однотонные материалы
+            PhongMaterial whiteMaterial = new PhongMaterial(Color.WHITE);
+            whiteMaterial.setSpecularPower(32);
+            cube.setMaterial(whiteMaterial);
         }
+    }
 
-        Button circleBtn = createShapeButton("circle");
-        Button rectBtn = createShapeButton("rect");
-        Button triangleBtn = createShapeButton("triangle");
+    private void createSurface() {
+        Box surface = new Box(800, 10, 600);
+        surface.setTranslateY(200);
+        
+        PhongMaterial surfaceMaterial = new PhongMaterial(Color.LIGHTGRAY);
+        surfaceMaterial.setSpecularPower(16);
+        surface.setMaterial(surfaceMaterial);
+        
+        root.getChildren().add(surface);
+    }
 
-        HBox shapesBox = new HBox(8, circleBtn, rectBtn, triangleBtn);
-        shapesBox.setAlignment(Pos.CENTER);
-        shapesBox.setStyle("-fx-background-color: #ffffff22; -fx-padding: 8; -fx-background-radius: 8;");
-
-        menu.getChildren().addAll(shapesBox, start, stop, mode, clear);
-
-        circleBtn.setOnAction(e -> addShape(createCircle()));
-        rectBtn.setOnAction(e -> addShape(createRect()));
-        triangleBtn.setOnAction(e -> addShape(createTriangle()));
-
-        start.setOnAction(e -> timer.start());
-        stop.setOnAction(e -> timer.stop());
-
-        mode.setOnAction(e -> {
-            modeIndex = (modeIndex + 1) % modes.length;
-            shapes.forEach(s -> s.shape.setBlendMode(modes[modeIndex]));
+    private void setupMouseControl(Scene scene) {
+        scene.setOnMousePressed(event -> {
+            isMousePressed = true;
+            prevMouseX = event.getSceneX();
+            prevMouseY = event.getSceneY();
         });
-
-        clear.setOnAction(e -> {
-            mainPane.getChildren().clear();
-            secondPane.getChildren().clear();
-            shapes.clear();
+        
+        scene.setOnMouseReleased(event -> {
+            isMousePressed = false;
         });
+        
+        scene.setOnMouseDragged(event -> {
+            if (isMousePressed) {
+                double deltaX = event.getSceneX() - prevMouseX;
+                double deltaY = event.getSceneY() - prevMouseY;
+                
+                rotationY += deltaX * 0.5;
+                rotationX += deltaY * 0.5;
+                
+                prevMouseX = event.getSceneX();
+                prevMouseY = event.getSceneY();
+                
+                updateCubeRotation();
+            }
+        });
+        
+        scene.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.SPACE) {
+                throwDice();
+            }
+        });
+    }
 
-        timer = new AnimationTimer() {
+    private void updateCubeRotation() {
+        cube.getTransforms().clear();
+        Rotate rotateX = new Rotate(rotationX, Rotate.X_AXIS);
+        Rotate rotateY = new Rotate(rotationY, Rotate.Y_AXIS);
+        cube.getTransforms().addAll(rotateX, rotateY);
+    }
+
+    private void throwDice() {
+        velocityY = -15;
+        velocityX = (Math.random() - 0.5) * 10;
+        velocityZ = (Math.random() - 0.5) * 10;
+        rotationX += (Math.random() - 0.5) * 180;
+        rotationY += (Math.random() - 0.5) * 180;
+    }
+
+    private VBox createControlPanel() {
+        VBox panel = new VBox(15);
+        panel.setPadding(new Insets(15));
+        panel.setStyle("-fx-background-color: #2c3e50; -fx-border-color: #34495e;");
+        panel.setPrefWidth(200);
+        
+        Label titleLabel = new Label("Управление освещением");
+        titleLabel.setStyle("-fx-text-fill: white; -fx-font-size: 14; -fx-font-weight: bold;");
+        
+        Label attenuationLabel = new Label("Затухание света:");
+        attenuationLabel.setStyle("-fx-text-fill: white;");
+        
+        Slider attenuationSlider = new Slider(0, 1, lightAttenuation);
+        attenuationSlider.setOnMouseReleased(e -> {
+            lightAttenuation = attenuationSlider.getValue();
+            updateLighting();
+        });
+        
+        Label ambientLabel = new Label("Фоновое освещение:");
+        ambientLabel.setStyle("-fx-text-fill: white;");
+        
+        Slider ambientSlider = new Slider(0, 1, ambientIntensity);
+        ambientSlider.setOnMouseReleased(e -> {
+            ambientIntensity = ambientSlider.getValue();
+            updateLighting();
+        });
+        
+        Button throwButton = new Button("Бросить кубик (Space)");
+        throwButton.setPrefWidth(170);
+        throwButton.setStyle("-fx-font-size: 12;");
+        throwButton.setOnAction(e -> throwDice());
+        
+        Label infoLabel = new Label("Вращение: перетащите мышью\nБросок: нажмите Space");
+        infoLabel.setStyle("-fx-text-fill: white; -fx-font-size: 10;");
+        
+        panel.getChildren().addAll(
+                titleLabel,
+                new Separator(),
+                attenuationLabel,
+                attenuationSlider,
+                ambientLabel,
+                ambientSlider,
+                new Separator(),
+                throwButton,
+                infoLabel
+        );
+        
+        return panel;
+    }
+
+    private void updateLighting() {
+        if (ambientLight != null) {
+            ambientLight.setColor(Color.color(0.5, 0.5, 0.5, ambientIntensity));
+        }
+    }
+
+    private void startAnimation() {
+        animationTimer = new AnimationTimer() {
             @Override
             public void handle(long now) {
-                for (MovingShape s : shapes) {
-                    s.move(mainPane);
+                // Применение гравитации и физики
+                velocityY += 0.5; // Гравитация
+                
+                posY += velocityY;
+                posZ += velocityZ;
+                posZ += velocityX * 0.1;
+                
+                // Столкновение с поверхностью
+                if (posY >= 100) {
+                    posY = 100;
+                    velocityY *= -0.7; // Отскок
+                    if (Math.abs(velocityY) < 1) {
+                        velocityY = 0;
+                    }
+                }
+                
+                cube.setTranslateY(posY);
+                cube.setTranslateZ(posZ);
+                
+                // Вращение при падении
+                if (velocityY != 0) {
+                    rotationX += velocityX;
+                    rotationY += velocityZ;
+                    updateCubeRotation();
                 }
             }
         };
-        timer.start();
-
-        primaryStage.show();
-        secondStage.show();
-    }
-
-    // ===== SHAPES =====
-
-    private Button createShapeButton(String type) {
-        Button btn = new Button();
-        btn.setGraphic(createIcon(type));
-        return btn;
-    }
-
-    private Shape createIcon(String type) {
-        if ("circle".equals(type)) return new Circle(8, randomColor());
-
-        if ("triangle".equals(type)) {
-            Polygon t = new Polygon(8, 0, 16, 16, 0, 16);
-            t.setFill(randomColor());
-            return t;
-        }
-
-        Rectangle r = new Rectangle(16, 16);
-        r.setFill(randomColor());
-        return r;
-    }
-
-    private Circle createCircle() {
-        double r = 15 + Math.random() * 20;
-        Circle c = new Circle(r, randomColor());
-
-        c.setLayoutX(r + Math.random() * (mainPane.getWidth() - 2 * r));
-        c.setLayoutY(r + Math.random() * (mainPane.getHeight() - 2 * r));
-
-        return c;
-    }
-
-    private Rectangle createRect() {
-        double w = 30 + Math.random() * 20;
-        double h = 30 + Math.random() * 20;
-
-        Rectangle r = new Rectangle(w, h);
-        r.setFill(randomColor());
-
-        r.setLayoutX(Math.random() * (mainPane.getWidth() - w));
-        r.setLayoutY(Math.random() * (mainPane.getHeight() - h));
-
-        return r;
-    }
-
-    private Polygon createTriangle() {
-        double size = 30 + Math.random() * 20;
-
-        Polygon t = new Polygon(
-                0.0, size,
-                size / 2, 0.0,
-                size, size
-        );
-
-        t.setFill(randomColor());
-
-        t.setLayoutX(Math.random() * (mainPane.getWidth() - size));
-        t.setLayoutY(Math.random() * (mainPane.getHeight() - size));
-
-        return t;
-    }
-
-    private void addShape(Shape s) {
-        s.setBlendMode(modes[modeIndex]);
-        shapes.add(new MovingShape(s));
-        mainPane.getChildren().add(s);
-        enableDrag(s);
-        addContextMenu(s);
-    }
-
-    // ===== MOVEMENT =====
-
-    private static class MovingShape {
-        Shape shape;
-        double dx = Math.random() * 3 - 1.5;
-        double dy = Math.random() * 3 - 1.5;
-
-        MovingShape(Shape s) {
-            shape = s;
-        }
-
-        void move(Pane bounds) {
-            double x = shape.getLayoutX();
-            double y = shape.getLayoutY();
-
-            Bounds b = shape.getBoundsInParent();
-
-            if (b.getMinX() <= 0 || b.getMaxX() >= bounds.getWidth()) dx *= -1;
-            if (b.getMinY() <= 0 || b.getMaxY() >= bounds.getHeight()) dy *= -1;
-
-            shape.setLayoutX(x + dx);
-            shape.setLayoutY(y + dy);
-        }
-    }
-
-    // ===== CONTEXT MENU =====
-
-    private void addContextMenu(Shape s) {
-        ContextMenu menu = new ContextMenu();
-        MenuItem delete = new MenuItem("Удалить");
-
-        delete.setOnAction(e -> {
-            ((Pane) s.getParent()).getChildren().remove(s);
-            shapes.removeIf(ms -> ms.shape == s);
-        });
-
-        menu.getItems().add(delete);
-
-        s.setOnContextMenuRequested(e ->
-                menu.show(s, e.getScreenX(), e.getScreenY()));
-    }
-
-    // ===== DRAG & DROP =====
-
-    private void enableDrag(Shape s) {
-
-        s.setOnDragDetected(e -> {
-            Dragboard db = s.startDragAndDrop(TransferMode.MOVE);
-
-            ClipboardContent content = new ClipboardContent();
-            content.putString("shape");
-            db.setContent(content);
-
-            db.setDragView(s.snapshot(null, null));
-
-            draggingShape = s;
-            s.setVisible(false);
-
-            e.consume();
-        });
-    }
-
-    private void setupDrop(Pane targetPane) {
-
-        targetPane.setOnDragOver(e -> {
-            if (e.getDragboard().hasString()) {
-                e.acceptTransferModes(TransferMode.MOVE);
-            }
-            e.consume();
-        });
-
-        targetPane.setOnDragDropped(e -> {
-
-            if (draggingShape == null) return;
-
-            Pane sourcePane = (Pane) draggingShape.getParent();
-
-            if (sourcePane != targetPane) {
-                sourcePane.getChildren().remove(draggingShape);
-                targetPane.getChildren().add(draggingShape);
-            }
-
-            draggingShape.setLayoutX(e.getX());
-            draggingShape.setLayoutY(e.getY());
-            draggingShape.setVisible(true);
-
-            if (targetPane == secondPane) {
-                shapes.removeIf(ms -> ms.shape == draggingShape);
-                draggingShape.setOnContextMenuRequested(null);
-                enableSecondWindowBehavior(draggingShape);
-            } else {
-                if (shapes.stream().noneMatch(ms -> ms.shape == draggingShape)) {
-                    shapes.add(new MovingShape(draggingShape));
-                }
-                enableDrag(draggingShape);
-                addContextMenu(draggingShape);
-            }
-
-            e.setDropCompleted(true);
-            draggingShape = null;
-            e.consume();
-        });
-    }
-
-    // ===== SECOND WINDOW =====
-
-    private void enableSecondWindowBehavior(Shape s) {
-        s.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                secondPane.getChildren().remove(s);
-            } else if (e.getButton() == MouseButton.SECONDARY) {
-                s.setFill(randomColor());
-            }
-        });
-    }
-
-    private Color randomColor() {
-        return Color.hsb(Math.random() * 360, 0.7, 0.9);
+        animationTimer.start();
     }
 
     public static void main(String[] args) {
-        launch();
+        launch(args);
     }
 }
